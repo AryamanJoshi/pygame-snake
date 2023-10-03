@@ -44,9 +44,14 @@ class Snake(pygame.sprite.Sprite):
                      (self.position[0] - gridLength, self.position[1]),
                      (self.position[0] - 2 * gridLength, self.position[1])]
         
-        self.snakeMoveDelay = 0.20    
+        self.initSnakeMoveDelay = 0.20
+        self.snakeMoveDelayChange = 0.003
+        self.snakeMoveDelay = self.initSnakeMoveDelay    
         
-    def update(self): 
+    def update(self):
+        global aiReward
+        global aiMovePunishment
+         
         xPos, yPos = self.position
         xDir, yDir = self.direction
         
@@ -62,22 +67,17 @@ class Snake(pygame.sprite.Sprite):
             for i in range(len(self.body) - 1, 0, -1):
                 self.body[i] = self.body[i - 1]
             self.body[0] = self.position
+        
+        aiReward -= aiMovePunishment
                       
     def eatFood(self):
         self.body.append(self.body[-1])
-        self.snakeMoveDelay -= 0.003 #Change this to 0 when simulating
-        self.update() #So that the tail is rendered instantly!    
-
-# NOTE: pendingDirection was introduced to avoid the snake making a 180 and instead of a
-#       u-turn when two keys are pressed in rapid succession. This works because the update()
-#       method is not running at 60fps but your inputs are. So as soon as you press a key, the
-#       pending direction is instantaneously changed, but the update() method still hasn't 
-#       updated to the new direction because of the different frame rate.
-#       Assume your snake is going right, your direction is (-1,0) 
-#       Now suppose you press up and left rapidly. This changes your pending direction to up,
-#       but it cant change it to left because your current direction (self.direction) going right
-#       and so the if statement below blocks it from happening. So the snake safely goes up. But now
-#       that it's going up, the left-control is registered and your snake can instantly turn left.
+        self.snakeMoveDelay -= self.snakeMoveDelayChange
+        self.update()
+        
+        eatSound = pygame.mixer.Sound('Audio/eating_sound.mp3')
+        eatSound.set_volume(0.4)   
+        eatSound.play()
 
     def playerInput(self):
         keys = pygame.key.get_pressed()
@@ -97,7 +97,7 @@ class Snake(pygame.sprite.Sprite):
         self.body = [self.position,
                      (self.position[0] - gridLength, self.position[1]),
                      (self.position[0] - 2 * gridLength, self.position[1])]
-        self.snakeMoveDelay = 0.20                      
+        self.snakeMoveDelay = self.initSnakeMoveDelay                      
  
 class Food(pygame.sprite.Sprite):
     def __init__(self):
@@ -118,10 +118,10 @@ class Food(pygame.sprite.Sprite):
         
         self.respawnFood()
 
-    def generateRandomPosition(self): #Don't store this as a variable! Making it a function will make it random every time.
+    def generateRandomPosition(self):
         while True:
-            x = random.randint(1, gridCount - 2) * gridLength
-            y = random.randint(1, gridCount - 2) * gridLength
+            x = random.randint(2, gridCount - 3) * gridLength
+            y = random.randint(2, gridCount - 3) * gridLength
 
             if (x, y) not in snake.body:
                 return x, y
@@ -137,6 +137,11 @@ class Food(pygame.sprite.Sprite):
 #==========================================================================
 
 pygame.init()
+pygame.mixer.init()
+
+pygame.mixer.music.load('Audio/BG_EarthenPot.mp3')
+pygame.mixer.music.play(-1) 
+
 pygame.display.set_caption("✧*̥˚ Aryaman's Snake *̥˚✧")
 pygame.display.set_icon(pygame.image.load('Art/Snake/SnakeHead.png'))
 
@@ -154,8 +159,10 @@ screen = pygame.display.set_mode((screenLength,screenLength))
 
 bgSurf = pygame.image.load('Art/Background.png').convert()
 fontTitle = pygame.font.Font('Art/MonsterFriendFore.otf', 50)
+fontCredits = pygame.font.Font('Art/MonsterFriendFore.otf', 13)
 fontSubtitle = pygame.font.Font('Art/MonsterFriendFore.otf', 16)
 fontScore = pygame.font.Font('Art/MonsterFriendFore.otf', 32)
+fontGameOver = pygame.font.Font('Art/MonsterFriendFore.otf', 18)
 
 gameName = fontTitle.render('Snake!',False,"#ae3434")
 gameNameRect = gameName.get_rect(center = (screenLength/2, 200))
@@ -163,9 +170,13 @@ gameNameRect = gameName.get_rect(center = (screenLength/2, 200))
 myName = fontSubtitle.render('by Aryaman',False,"#a18431")
 myNameRect = gameName.get_rect(center = (screenLength/2+103, 250))
 
+creditsSurf = fontCredits.render('Coding, Artwork, and Background Music',False,"#5e342c")
+creditsRect = creditsSurf.get_rect(center = (screenLength/2, screenLength-60))
+credits2Surf = fontCredits.render('by Aryaman Manish Joshi',False,"#5e342c")
+credits2Rect = credits2Surf.get_rect(center = (screenLength/2, screenLength-40))
+
 #Snake and Food Configurations
 snake = Snake()
-# snakeMoveDelay = 0.20 (This has been moved to snake() class)
 lastMoveTime = 0
 
 food = Food()
@@ -174,6 +185,12 @@ food = Food()
 gameRunning = True
 clock = pygame.time.Clock()
 highScore = 0
+oldScore = 0
+
+# AI Reward Configurations
+aiReward = 0
+aiRewardChange = 100
+aiMovePunishment = 1
 
 #==========================================================================
 
@@ -198,10 +215,17 @@ while gameRunning:
         snake.position in snake.body[1:]):
         food.respawnFood()
         snake.resetGame()
+        gameOverSound = pygame.mixer.Sound('Audio/game_over.mp3')
+        gameOverSound.set_volume(0.7)   
+        gameOverSound.play()
+        
+        aiReward -= aiRewardChange
 
     if snake.position == food.foodPosition:
         food.respawnFood()
-        snake.eatFood()    
+        snake.eatFood()   
+        
+        aiReward += aiRewardChange
      
     #Drawings            
     screen.blit(bgSurf,(0,0))
@@ -209,6 +233,9 @@ while gameRunning:
     score = len(snake.body) - 2
     if score > highScore:
         highScore = score
+        
+    if score > 1:
+        oldScore = score 
     
     viewScore = fontSubtitle.render(f'Score: {score}',False,"#5e342c")
     viewScoreRect = viewScore.get_rect(center = (100, 45))
@@ -216,18 +243,24 @@ while gameRunning:
     viewHighScore = fontSubtitle.render(f'Highscore: {highScore}',False,"#5e342c")
     viewHighScoreRect = viewHighScore.get_rect(center = (screenLength-127, 45))
     
+    myScore = fontGameOver.render(f'Your Score: {oldScore}',False,"#5e342c")
+    myScoreRect = myScore.get_rect(center = (screenLength/2, 164))
+    
     if score <= 1:
             screen.blit(gameName, gameNameRect)
             screen.blit(myName, myNameRect)
+            if highScore > 1:
+                screen.blit(myScore, myScoreRect)
+                screen.blit(creditsSurf, creditsRect)
+                screen.blit(credits2Surf, credits2Rect)
+                
     else: 
         screen.blit(viewScore, viewScoreRect)
         screen.blit(viewHighScore, viewHighScoreRect)
     
-    
     foodRect = pygame.Rect(food.foodPosition, food.rect.size)          
     screen.blit(food.image, foodRect)
 
-    
     # Snake Head Render    
     if snake.body[1][0] > snake.body[0][0]:
         screen.blit(snake.snakeHeadLeft, snake.body[0])
@@ -237,6 +270,7 @@ while gameRunning:
         screen.blit(snake.snakeHeadDown, snake.body[0])
     elif snake.body[1][1] > snake.body[0][1]:
         screen.blit(snake.snakeHeadUp, snake.body[0])
+        
     # Snake Tail Render
     if len(snake.body) > 1:
         if snake.body[-2][0] > snake.body[-1][0]:
@@ -246,7 +280,8 @@ while gameRunning:
         elif snake.body[-2][1] > snake.body[-1][1]:
             screen.blit(snake.snakeTailDown, snake.body[-1])
         elif snake.body[-2][1] < snake.body[-1][1]:
-            screen.blit(snake.snakeTailUp, snake.body[-1])         
+            screen.blit(snake.snakeTailUp, snake.body[-1])   
+                  
     # Snake Body Render        
     for index, segment in enumerate(snake.body[1:-1]):       
         #Bent Segments
